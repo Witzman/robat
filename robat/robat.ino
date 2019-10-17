@@ -31,7 +31,8 @@
 
 // --- BEGIN INIT GENERAL ---
 
-#define DEBUG true
+#define DEBUG false
+#define DEBUGMODE true
 
 // --- END INIT GENERAL ---
 
@@ -46,7 +47,7 @@
 #define MANUAL 0
 #define AUTONOMOUS 1
 #define BATTLE 2
-#define BUMPERATTACK 3
+#define BUMPERMODE 3
 
 // Standard-Modus ist MANUAL
 int nMode = MANUAL;
@@ -69,7 +70,7 @@ int nAttackCounter = 0;
 // auf 2 gesetzt wird, wird ein Druck auf den Joystick-Button als Kollision
 // interpretiert.
 
-#define BUMPER_PIN 2
+#define BUMPER_PIN 18
 
 // --- END INIT BUMPER ---
 
@@ -172,7 +173,7 @@ int nJoyPosH = 512;
 
 #define TRIGGER_PIN  15  // Trigger Signal an den Ultraschallsensor
 #define ECHO_PIN     14  // Echo Antwort vom Ultraschallsensor
-#define MAX_DISTANCE 100 // Begrenzung der max. Distanz auf 100cm
+#define MAX_DISTANCE 80 // Begrenzung der max. Distanz auf 100cm
 
 unsigned long timeOfLastDistanceMeasurement = millis();
 
@@ -1014,7 +1015,7 @@ void avoidObstacles() {
     showDistance(nDistance);
 
     int nSpeed = 0;
-    if (digitalRead(BUMPER_PIN) == LOW) {
+    if (digitalRead(BUMPER_PIN) == HIGH) {
         // Zusammenstoß mit Hindernis erkannt. Ausweichen
 
         stopMotors(FORWARD);
@@ -1222,7 +1223,7 @@ void manualControl() {
     
     // startMotors(int nDirA, int nSpeedA, int nDirB, int nSpeedB);
     startMotors(nMotorDir, nMotorSpeed1, nMotorDir, nMotorSpeed2);
-
+TimerFreeTone(TONE_PIN, NOTE_C3, ACHTEL); 
 }
  
 // --- END FUNCTIONS MANUAL_CONTROL ---
@@ -1244,7 +1245,7 @@ void setup() {
 // --- BEGIN SETUP BUMPER ---
 
     // Kollisionserkennung
-    pinMode(BUMPER_PIN, INPUT_PULLUP);
+    pinMode(BUMPER_PIN, INPUT);
 
 // --- END SETUP BUMPER ---
 
@@ -1344,7 +1345,7 @@ void setup() {
     int bButtonPressed = digitalRead(BUMPER_PIN);
 
     if (LOW == bButtonPressed) {
-        nMode = BUMPERATTACK; 
+        nMode = BUMPERMODE; 
     }
     else if (nDistance < 10) {
         nMode = MANUAL;
@@ -1400,20 +1401,31 @@ void setup() {
             FastLED.show();
             break;
 
+ case BUMPERMODE:
+            leds[1] = CRGB::Red;
+            FastLED.show();
+            delay(100);
+            leds[1] = CRGB::Black;
+            FastLED.show();
+            delay(100);
+            leds[1] = CRGB::Red;
+            FastLED.show();
+            break;
+            
         case BATTLE:
-            leds[1] = CRGB::Green;
+            leds[0] = CRGB::Green;
             FastLED.show();
             delay(100);
-            leds[1] = CRGB::Black;
+            leds[0] = CRGB::Black;
             FastLED.show();
             delay(100);
-            leds[1] = CRGB::Green;
+            leds[0] = CRGB::Green;
             FastLED.show();
             delay(100);
-            leds[1] = CRGB::Black;
+            leds[0] = CRGB::Black;
             FastLED.show();
             delay(100);
-            leds[1] = CRGB::Green;
+            leds[0] = CRGB::Green;
             FastLED.show();
             break;
 
@@ -1466,20 +1478,37 @@ void loop() {
     switch (nMode) {
         case AUTONOMOUS:
             avoidObstacles();
+                         if (DEBUGMODE) {
+              Serial.println("AUTO ");
+              Serial.println(digitalRead(BUMPER_PIN));
+              }
             break;
 
         case BATTLE:
             doBattle();
+              if (DEBUGMODE) {
+              Serial.println("BATTLE ");
+              Serial.println(digitalRead(BUMPER_PIN));
+              }
             break;
 
         case MANUAL:
             default:
             manualControl();
+             if (DEBUGMODE) {
+              Serial.println("MANUAL ");
+              Serial.println(digitalRead(BUMPER_PIN));
+              }
       break;
     
-    case BUMPERATTACK:
-    //
-    //
+    case BUMPERMODE:
+//    TimerFreeTone(TONE_PIN, NOTE_A4, 80);
+    delay(100);
+if (DEBUGMODE) {
+              Serial.println("BUMPER ");
+              Serial.println(digitalRead(BUMPER_PIN));
+              }
+      break;
     //
     break;
     }
