@@ -32,7 +32,6 @@
 // --- BEGIN INIT GENERAL ---
 
 #define DEBUG false
-#define DEBUGMODE true
 
 // --- END INIT GENERAL ---
 
@@ -40,14 +39,13 @@
 // --- BEGIN INIT AUTOMANUAL ---
 
 // RoBat verfügt über drei verschiedene Betriebsmodi: 
-// - manuelle Steuerung (MANUAL) // Deaktiviert
+// - manuelle Steuerung (MANUAL)
 // - Hindernisvermeidung (AUTONOMOUS)
 // - Hebocon- / Kampf (BATTLE)
 
 #define MANUAL 0
 #define AUTONOMOUS 1
 #define BATTLE 2
-#define BUMPERMODE 3
 
 // Standard-Modus ist MANUAL
 int nMode = MANUAL;
@@ -70,7 +68,7 @@ int nAttackCounter = 0;
 // auf 2 gesetzt wird, wird ein Druck auf den Joystick-Button als Kollision
 // interpretiert.
 
-#define BUMPER_PIN 18
+#define BUMPER_PIN 2
 
 // --- END INIT BUMPER ---
 
@@ -125,31 +123,81 @@ int nAttackCounter = 0;
 int melody[]   = { NOTE_C4, NOTE_A4 };
 int duration[] = { VIERTEL, ACHTEL  };
 
+/*
+
+// Eine andere Melodie
+
+#define melody_length 8
+int melody[]   = { NOTE_C4, NOTE_G3, NOTE_G3, NOTE_A3, NOTE_G3, NOTE_PAUSE, NOTE_H3, NOTE_C4 };
+int duration[] = { VIERTEL, ACHTEL,  ACHTEL,  VIERTEL, VIERTEL, VIERTEL,    VIERTEL, VIERTEL };
+
+*/
 
 // --- END INIT BUZZER ---
 
 
+// --- BEGIN INIT SERVO ---
 
+// Die Servo Bibliothek von Michael Margolis ist standardmäßig installiert.
+// Dieser Sketch setzt auf v1.1.3 der Servo Bibliothek auf.
 
+#include <Servo.h>
 
+// servos on A0 (D14) and A1 (D15)
 
+// RoBat verfügt über zwei Servos. Servo 2 wird zum Drehen des 
+// Ultraschallsensors verwendet. Servo 1 ist frei verwendbar und wird
+// in diesem Sketch langsam hin- und her bewegt.
 
-// --- BEGIN INIT JOYSTICK ---
+// Für jeden Servo wird die minimale und maximale Position angegeben.
+// Die minimale Position sollte theoretisch 0, die maximale 180 Grad sein. 
+// In der Praxis werden diese Werte oft nicht erreicht. Sie müssen 
+// individuell bestimmt werden. 
 
-// Die Stellung des Joysticks wird über die Pins A6 und A7 eingelesen.
-#define JOY_VERTICAL_PIN A6
-#define JOY_HORIZONTAL_PIN A7
+#define SERVO_1_PIN 13
+#define SERVO_1_MIN 10   // minimale Position 0-180
+#define SERVO_1_MAX 170  // maximale Position 0-180
 
-// Joystickposition (0..1023). Die Mittelstellung hat den Wert 512.
-int nJoyPosV = 512;
-int nJoyPosH = 512;
+#define SERVO_2_PIN 12
+#define SERVO_2_MIN 25   // minimale Position 0-180
+#define SERVO_2_MAX 180  // maximale Position 0-180
 
-// Werte zwischen JOY_MIDDLE_MIN und JOY_MIDDLE_MAX werden als 
-// Mittelstellung interpretiert
-#define JOY_MIDDLE_MIN 472
-#define JOY_MIDDLE_MAX 552
+// Der Servo benötigt eine gewisse Zeit für die Drehung. DETACH_DELAY gibt
+// diese Zeit in ms an.
 
-// --- END INIT JOYSTICK ---
+#define DETACH_DELAY_SERVO_1 300 
+#define DETACH_DELAY_SERVO_2 150 
+
+// Servo Objekte erstellen
+
+Servo servo1;
+Servo servo2;
+
+bool bAttachedServo1 = false;
+bool bAttachedServo2 = false;
+
+// Das Bewegen eines Servos dauert einige Zeit. Der Programmablauf soll
+// nicht durch das Warten auf das Ende der Bewegung ausgebremst werden.
+// Daher führen wir die Bewegung in kleinen Teilen aus. Wir merken uns 
+// die Systemzeit bei Beginn der Bewegung und jeweils bei der Ausführung
+// einer Teilbewegung. In der Loop prüfen wir, ob der Zeitpunkt für die
+// nächste Bewegung gekommen ist und führen die nächste Teilbewegung 
+// (nur) dann aus.
+
+unsigned long timeOfLastChangeServo1 = 0;
+unsigned long timeOfLastChangeServo2 = 0;
+
+// Für die Bewegung erhält ein Servo eine Zielposition. Während der
+// Teilbewegungen besitzt er jeweils eine aktuelle Position. Durch 
+// Vergleich der beiden kann entschieden werden, ob eine weitere 
+// Bewegung notwendig ist.
+
+int actualPositionServo1 = 0;
+int targetPositionServo1 = 0;
+int actualPositionServo2 = 0;
+int targetPositionServo2 = 0;
+
+// --- END INIT SERVO ---
 
 
 // --- BEGIN INIT ULTRASONIC ---
@@ -173,7 +221,7 @@ int nJoyPosH = 512;
 
 #define TRIGGER_PIN  15  // Trigger Signal an den Ultraschallsensor
 #define ECHO_PIN     14  // Echo Antwort vom Ultraschallsensor
-#define MAX_DISTANCE 80 // Begrenzung der max. Distanz auf 100cm
+#define MAX_DISTANCE 100 // Begrenzung der max. Distanz auf 100cm
 
 unsigned long timeOfLastDistanceMeasurement = millis();
 
@@ -183,6 +231,92 @@ Ultrasonic ultrasonic(TRIGGER_PIN, ECHO_PIN);
 // ultrasonic.setTimeout(10000UL); // max. 40000UL
 
 // --- END INIT ULTRASONIC ---
+
+
+// --- BEGIN INIT WS2811 ---
+
+// Für die Ansteuerung der LEDs (P9812 bzw. WS8212) verwenden wir die 
+// FastLED Library von Daniel Garcia in der Version 3.2.6
+// https://github.com/FastLED/FastLED
+
+#include <FastLED.h>
+
+// Anzahl der LEDs. RoBat verwendet standardmäßig nur zwei, aber mit 
+// dieser Angabe können bis zu 12 hintereinandergeschaltet werden.
+#define NUM_LEDS 12
+
+// Array zur Speicherung der Farben aller LEDs
+CRGB leds[NUM_LEDS];
+
+// Die LEDs werden auf der RoBat Platine über Pin 10 angesteuert
+#define WS2811_PIN 10
+
+// --- END INIT WS2811 ---
+
+
+// --- BEGIN INIT MOTOR ---
+
+// Auf dem Motortreiberboard sind die Eingänge für Motor A mit in1 und in2
+// markiert und die Eingänge für Motor B mit in3 und in4. 
+
+// Motor A
+#define MOTOR_A_ENABLE_PIN 6
+#define MOTOR_A_IN1_PIN 7
+#define MOTOR_A_IN2_PIN 8
+
+// Motor B
+#define MOTOR_B_ENABLE_PIN 3
+#define MOTOR_B_IN3_PIN 5
+#define MOTOR_B_IN4_PIN 4
+
+#define MOTOR_STANDBY_PIN 9
+
+
+// Geschwindigkeiten der beiden Motoren 
+int nMotorSpeed1 = 0;
+int nMotorSpeed2 = 0;
+
+// Vorherige Motorgeschwindigkeiten
+int nPrevMotorSpeed1 = 0;
+int nPrevMotorSpeed2 = 0;
+
+// Maximale Geschwindigkeit der beiden Motoren
+// MAX_SPEED 0..255
+#define MAX_SPEED 196
+
+// Motor A / B (linker Motor / rechter Motor)
+#define MOTOR_A 0
+#define MOTOR_B 1
+
+// Richtungen vorwärts und rückwärts eines Motors
+#define FORWARD 0
+#define BACKWARD 1
+#define STOP 2
+
+// Richtung, in die der Roboter sich dreht
+#define LEFT 0
+#define RIGHT 1
+
+// --- END INIT MOTOR ---
+
+
+// --- BEGIN INIT JOYSTICK ---
+
+// Die Stellung des Joysticks wird über die Pins A6 und A7 eingelesen.
+#define JOY_VERTICAL_PIN A6
+#define JOY_HORIZONTAL_PIN A7
+
+// Joystickposition (0..1023). Die Mittelstellung hat den Wert 512.
+int nJoyPosV = 512;
+int nJoyPosH = 512;
+
+// Werte zwischen JOY_MIDDLE_MIN und JOY_MIDDLE_MAX werden als 
+// Mittelstellung interpretiert
+#define JOY_MIDDLE_MIN 472
+#define JOY_MIDDLE_MAX 552
+
+// --- END INIT JOYSTICK ---
+
 
 // --- BEGIN FUNCTIONS ULTRASONIC ---
 
@@ -227,26 +361,6 @@ int getDistance(int nMeasurements = 3) {
 
 // --- END FUNCTIONS ULTRASONIC ---
 
-
-// --- BEGIN INIT LED ---
-
-// Für die Ansteuerung der LEDs (P9812 bzw. WS8212) verwenden wir die 
-// FastLED Library von Daniel Garcia in der Version 3.2.6
-// https://github.com/FastLED/FastLED
-
-#include <FastLED.h>
-
-// Anzahl der LEDs. RoBat verwendet standardmäßig nur zwei, aber mit 
-// dieser Angabe können bis zu 12 hintereinandergeschaltet werden.
-#define NUM_LEDS 1
-
-// Array zur Speicherung der Farben aller LEDs
-CRGB leds[NUM_LEDS];
-
-// Die LEDs werden auf der RoBat Platine über Pin 10 angesteuert
-#define WS2811_PIN 10
-
-// --- END INIT LED ---
 
 // --- BEGIN FUNCTIONS LED ---
 
@@ -297,75 +411,13 @@ void showDistance(int nDistance) {
 
 // --- END FUNCTIONS LED ---
 
-// --- BEGIN INIT SERVO ---
-
-// Die Servo Bibliothek von Michael Margolis ist standardmäßig installiert.
-// Dieser Sketch setzt auf v1.1.3 der Servo Bibliothek auf.
-
-#include <Servo.h>
-
-// servos on A0 (D14) and A1 (D15)
-
-// RoBat verfügt über zwei Servos. Servo 2 wird zum Drehen des 
-// Ultraschallsensors verwendet. Servo 1 ist frei verwendbar und wird
-// in diesem Sketch langsam hin- und her bewegt.
-
-// Für jeden Servo wird die minimale und maximale Position angegeben.
-// Die minimale Position sollte theoretisch 0, die maximale 180 Grad sein. 
-// In der Praxis werden diese Werte oft nicht erreicht. Sie müssen 
-// individuell bestimmt werden. 
-
-//#define SERVO_1_PIN 13
-//#define SERVO_1_MIN 10   // minimale Position 0-180
-//#define SERVO_1_MAX 170  // maximale Position 0-180
-
-#define SERVO_2_PIN 12
-#define SERVO_2_MIN 25   // minimale Position 0-180
-#define SERVO_2_MAX 180  // maximale Position 0-180
-
-// Der Servo benötigt eine gewisse Zeit für die Drehung. DETACH_DELAY gibt
-// diese Zeit in ms an.
-
-//#define DETACH_DELAY_SERVO_1 300 
-#define DETACH_DELAY_SERVO_2 150 
-
-// Servo Objekte erstellen
-
-//Servo servo1;
-Servo servo2;
-
-//bool bAttachedServo1 = false;
-bool bAttachedServo2 = false;
-
-// Das Bewegen eines Servos dauert einige Zeit. Der Programmablauf soll
-// nicht durch das Warten auf das Ende der Bewegung ausgebremst werden.
-// Daher führen wir die Bewegung in kleinen Teilen aus. Wir merken uns 
-// die Systemzeit bei Beginn der Bewegung und jeweils bei der Ausführung
-// einer Teilbewegung. In der Loop prüfen wir, ob der Zeitpunkt für die
-// nächste Bewegung gekommen ist und führen die nächste Teilbewegung 
-// (nur) dann aus.
-
-//unsigned long timeOfLastChangeServo1 = 0;
-unsigned long timeOfLastChangeServo2 = 0;
-
-// Für die Bewegung erhält ein Servo eine Zielposition. Während der
-// Teilbewegungen besitzt er jeweils eine aktuelle Position. Durch 
-// Vergleich der beiden kann entschieden werden, ob eine weitere 
-// Bewegung notwendig ist.
-
-//int actualPositionServo1 = 0;
-//int targetPositionServo1 = 0;
-int actualPositionServo2 = 0;
-int targetPositionServo2 = 0;
-
-// --- END INIT SERVO ---
 
 // --- BEGIN FUNCTIONS SERVO ---
 
 /**
  * Stellt die Zielposition für Servo 1 ein und schaltet den Servomotor ein.
  * 
- 
+ */
 void startServo1(int targetPos) {
     targetPositionServo1 = targetPos;
 
@@ -387,7 +439,7 @@ void startServo1(int targetPos) {
 
     actualPositionServo1 = -1;
 }
-*/
+
 
 /**
  * Stellt die Zielposition für Servo 2 ein und schaltet den Servomotor ein.
@@ -421,7 +473,7 @@ void startServo2(int targetPos) {
 /**
  * Hält Servo 1 an.
  * 
-
+ */
 void stopServo1() {
    servo1.detach();
    bAttachedServo1 = false;
@@ -432,8 +484,7 @@ void stopServo1() {
    }
 }
 
- */
- 
+
 /**
  * Hält Servo 2 an.
  * 
@@ -453,7 +504,7 @@ void stopServo2() {
  * Bewegt Servo 1 hin und her. Dabei werden nacheinander mehrere 
  * Positionen angesteuert.
  * 
-
+ */
 void moveServoBackForth() {
 
     unsigned long timeNow = millis();
@@ -494,54 +545,10 @@ void moveServoBackForth() {
         actualPositionServo1 = targetPositionServo1;
     }
 }
- */
- 
-// --- END FUNCTIONS SERVO ---
 
-// --- BEGIN INIT MOTOR ---
-
-// Auf dem Motortreiberboard sind die Eingänge für Motor A mit in1 und in2
-// markiert und die Eingänge für Motor B mit in3 und in4. 
-
-// Motor A
-#define MOTOR_A_ENABLE_PIN 6
-#define MOTOR_A_IN1_PIN 7
-#define MOTOR_A_IN2_PIN 8
-
-// Motor B
-#define MOTOR_B_ENABLE_PIN 3
-#define MOTOR_B_IN3_PIN 5
-#define MOTOR_B_IN4_PIN 4
-
-#define MOTOR_STANDBY_PIN 9
+// --- BEGIN FUNCTIONS SERVO ---
 
 
-// Geschwindigkeiten der beiden Motoren 
-int nMotorSpeed1 = 0;
-int nMotorSpeed2 = 0;
-
-// Vorherige Motorgeschwindigkeiten
-int nPrevMotorSpeed1 = 0;
-int nPrevMotorSpeed2 = 0;
-
-// Maximale Geschwindigkeit der beiden Motoren
-// MAX_SPEED 0..255
-#define MAX_SPEED 196
-
-// Motor A / B (linker Motor / rechter Motor)
-#define MOTOR_A 0
-#define MOTOR_B 1
-
-// Richtungen vorwärts und rückwärts eines Motors
-#define FORWARD 0
-#define BACKWARD 1
-#define STOP 2
-
-// Richtung, in die der Roboter sich dreht
-#define LEFT 0
-#define RIGHT 1
-
-// --- END INIT MOTOR ---
 // --- BEGIN FUNCTIONS MOTOR ---
 
 /**
@@ -1015,7 +1022,7 @@ void avoidObstacles() {
     showDistance(nDistance);
 
     int nSpeed = 0;
-    if (digitalRead(BUMPER_PIN) == HIGH) {
+    if (digitalRead(BUMPER_PIN) == LOW) {
         // Zusammenstoß mit Hindernis erkannt. Ausweichen
 
         stopMotors(FORWARD);
@@ -1090,7 +1097,7 @@ void avoidObstacles() {
  * Manuelle Steuerung des RoBat, über die Joystick-Positionen wird die
  * Geschwindigkeit und Drehrichtung der Motoren gesteuert.
  * 
-*/
+ */
 void manualControl() {
 
     // Joystick Position einlesen
@@ -1223,13 +1230,10 @@ void manualControl() {
     
     // startMotors(int nDirA, int nSpeedA, int nDirB, int nSpeedB);
     startMotors(nMotorDir, nMotorSpeed1, nMotorDir, nMotorSpeed2);
-TimerFreeTone(TONE_PIN, NOTE_C3, ACHTEL); 
+
 }
- 
+
 // --- END FUNCTIONS MANUAL_CONTROL ---
-
-
-
 
 
 void setup() {
@@ -1245,46 +1249,46 @@ void setup() {
 // --- BEGIN SETUP BUMPER ---
 
     // Kollisionserkennung
-    pinMode(BUMPER_PIN, INPUT);
+    pinMode(BUMPER_PIN, INPUT_PULLUP);
 
 // --- END SETUP BUMPER ---
 
 
 // --- BEGIN SETUP SERVO ---
 
-//    pinMode(SERVO_1_PIN, OUTPUT);
+    pinMode(SERVO_1_PIN, OUTPUT);
     pinMode(SERVO_2_PIN, OUTPUT);
 
     // Servos beim Start hin und her bewegen (Funktionstest)
     
     startServo2(90);
-//    startServo1(90);
+    startServo1(90);
     delay(500);
     stopServo2();
     startServo2(45);
-//    stopServo1();
-//    startServo1(45);
+    stopServo1();
+    startServo1(45);
     delay(500);
     stopServo2();
     startServo2(135);
-//    stopServo1();
-//startServo1(135);
+    stopServo1();
+    startServo1(135);
     delay(500);
     stopServo2();
-//    stopServo1();
+    stopServo1();
 
     // in Mittelstellung ausrichten
     delay(500);
     startServo2(90);
-//    startServo1(90);
+    startServo1(90);
     delay(500);
     stopServo2();
-//    stopServo1();
+    stopServo1();
 
     targetPositionServo2 = 90;
     actualPositionServo2 = 90;
-//    targetPositionServo1 = 90;
-//    actualPositionServo1 = 90;
+    targetPositionServo1 = 90;
+    actualPositionServo1 = 90;
 
 // --- END SETUP SERVO ---
 
@@ -1334,7 +1338,7 @@ void setup() {
 
     // Betriebsmodus über den Abstand zum nächsten Objekt bestimmen
     
-    // Abstand < 10cm: BUMPERATTACK
+    // Abstand < 10cm: MANUAL
     // Abstand >= 10cm und <= 30cm: Hindernisvermeidung
     // Abstand > 30cm: Battle-Modus
 
@@ -1345,7 +1349,7 @@ void setup() {
     int bButtonPressed = digitalRead(BUMPER_PIN);
 
     if (LOW == bButtonPressed) {
-        nMode = BUMPERMODE; 
+        nMode = MANUAL; 
     }
     else if (nDistance < 10) {
         nMode = MANUAL;
@@ -1373,9 +1377,20 @@ void setup() {
 
     // verschiedene Farben einstellen
     leds[0] = CRGB::Aqua;
+    leds[1] = CRGB::Aqua;
+    leds[2] = CRGB::White;
+    leds[3] = CRGB::White;
+    leds[4] = CRGB::Green;
+    leds[5] = CRGB::Green;
+    leds[6] = CRGB::White;
+    leds[7] = CRGB::Red;
+    leds[8] = CRGB::Blue;
+    leds[9] = CRGB::Blue;
+    leds[10] = CRGB::White;
+    leds[11] = CRGB::White;
 
     // Helligkeit
-    FastLED.setBrightness(100);
+    FastLED.setBrightness(50);
 
     // Einstellungen setzen
     FastLED.show();
@@ -1393,39 +1408,28 @@ void setup() {
         case AUTONOMOUS:
             leds[1] = CRGB::Red;
             FastLED.show();
-            delay(100);
+            delay(500);
             leds[1] = CRGB::Black;
             FastLED.show();
-            delay(100);
+            delay(500);
             leds[1] = CRGB::Red;
             FastLED.show();
             break;
 
- case BUMPERMODE:
-            leds[1] = CRGB::Red;
+        case BATTLE:
+            leds[1] = CRGB::Green;
             FastLED.show();
-            delay(100);
+            delay(500);
             leds[1] = CRGB::Black;
             FastLED.show();
-            delay(100);
-            leds[1] = CRGB::Red;
+            delay(500);
+            leds[1] = CRGB::Green;
             FastLED.show();
-            break;
-            
-        case BATTLE:
-            leds[0] = CRGB::Green;
+            delay(500);
+            leds[1] = CRGB::Black;
             FastLED.show();
-            delay(100);
-            leds[0] = CRGB::Black;
-            FastLED.show();
-            delay(100);
-            leds[0] = CRGB::Green;
-            FastLED.show();
-            delay(100);
-            leds[0] = CRGB::Black;
-            FastLED.show();
-            delay(100);
-            leds[0] = CRGB::Green;
+            delay(500);
+            leds[1] = CRGB::Green;
             FastLED.show();
             break;
 
@@ -1445,7 +1449,7 @@ void setup() {
             leds[0].blue =  150;
 
             // Farben für alle Kanäle gleichzeitig setzen
-            //leds[1] = CRGB( nJoyColorValue, 255 - nJoyColorValue, 150);
+            leds[1] = CRGB( nJoyColorValue, 255 - nJoyColorValue, 150);
 
             FastLED.show();
     }
@@ -1465,59 +1469,35 @@ void setup() {
 
 }
 
-
-
-
-
 void loop() {
 
-// --- BEGIN MAIN LOOP ---
+// --- BEGIN LOOP MOTOR ---
 
     // Handlung entsprechend dem Betriebsmodus ausführen
     
     switch (nMode) {
         case AUTONOMOUS:
             avoidObstacles();
-                         if (DEBUGMODE) {
-              Serial.println("AUTO ");
-              Serial.println(digitalRead(BUMPER_PIN));
-              }
             break;
 
         case BATTLE:
             doBattle();
-              if (DEBUGMODE) {
-              Serial.println("BATTLE ");
-              Serial.println(digitalRead(BUMPER_PIN));
-              }
             break;
 
         case MANUAL:
             default:
             manualControl();
-             if (DEBUGMODE) {
-              Serial.println("MANUAL ");
-              Serial.println(digitalRead(BUMPER_PIN));
-              }
-      break;
-    
-    case BUMPERMODE:
-//    TimerFreeTone(TONE_PIN, NOTE_A4, 80);
-    delay(100);
-if (DEBUGMODE) {
-              Serial.println("BUMPER ");
-              Serial.println(digitalRead(BUMPER_PIN));
-              }
-      break;
-    //
-    break;
     }
 
+// --- END LOOP MOTOR ---
+
+
+// --- BEGIN LOOP SERVO ---
     
     // Servo 1 hin und her bewegen
-    //moveServoBackForth();
+    moveServoBackForth();
 
-// --- END MAIN SERVO ---
+// --- END LOOP SERVO ---
 
 
 }
